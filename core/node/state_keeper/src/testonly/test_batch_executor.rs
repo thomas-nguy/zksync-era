@@ -562,7 +562,7 @@ pub(crate) struct TestIO {
     protocol_version: ProtocolVersionId,
     previous_batch_protocol_version: ProtocolVersionId,
     protocol_upgrade_txs: HashMap<ProtocolVersionId, ProtocolUpgradeTx>,
-    pub next_l2_block_param: L2BlockParams,
+    pending_l2_block_actions: VecDeque<(L2BlockNumber, L2BlockParams)>,
 }
 
 impl fmt::Debug for TestIO {
@@ -610,7 +610,7 @@ impl TestIO {
             protocol_version: ProtocolVersionId::latest(),
             previous_batch_protocol_version: ProtocolVersionId::latest(),
             protocol_upgrade_txs: HashMap::default(),
-            next_l2_block_param: L2BlockParams::default(),
+            pending_l2_block_actions: VecDeque::default(),
         };
         (this, OutputHandler::new(Box::new(persistence)))
     }
@@ -719,12 +719,28 @@ impl StateKeeperIO for TestIO {
         };
         self.l2_block_number += 1;
         self.timestamp += 1;
-        self.next_l2_block_param = params;
+        self.pending_l2_block_actions.push_back((self.l2_block_number, params));
         Ok(Some(params))
     }
 
-    async fn get_updated_l2_block_params(&mut self) -> anyhow::Result<Option<L2BlockParams>> {
-        Ok(Some(self.next_l2_block_param))
+    async fn wait_for_closing_l2_block_params(
+        &mut self,
+        cursor: &IoCursor,
+        _max_wait: Duration,
+    ) -> anyhow::Result<Option<L2BlockParams>> {
+        if let Some((number, params)) = self.pending_l2_block_actions.pop_front() {
+            assert_eq!(cursor.next_l2_block, number);
+            return Ok(Some(params));
+        } else {
+            let params = L2BlockParams {
+                timestamp: self.timestamp,
+                // 1 is just a constant used for tests.
+                virtual_blocks: 1,
+            };
+            self.l2_block_number += 1;
+            self.timestamp += 1;
+            Ok(Some(params))
+        }
     }
 
     async fn wait_for_next_tx(
@@ -747,6 +763,7 @@ impl StateKeeperIO for TestIO {
         let ScenarioItem::Tx(_, tx, _) = action else {
             panic!("Unexpected action: {:?}", action);
         };
+        self.pending_l2_block_actions.pop_front();
         Ok(Some(tx))
     }
 

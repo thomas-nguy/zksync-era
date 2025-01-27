@@ -100,6 +100,8 @@ pub struct StateKeeperMetrics {
     /// The time it takes to wait for new L2 block parameters
     #[metrics(buckets = Buckets::LATENCIES)]
     pub wait_for_l2_block_params: Histogram<Duration>,
+    #[metrics(buckets = Buckets::LATENCIES)]
+    pub wait_for_l2_block_params_and_first_tx: Histogram<Duration>,
 }
 
 fn vm_revert_reason_as_metric_label(reason: &VmRevertReason) -> &'static str {
